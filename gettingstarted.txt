@@ -1,0 +1,58 @@
+FINQA MLOPS GETTING STARTED
+===========================
+
+1. ENVIRONMENT SETUP
+--------------------
+Create environment: python3 -m venv .venv
+Activate:           source .venv/bin/activate
+Dependencies:       pip install -r requirements.txt
+Ollama Model:       ollama create finqa-llama3.2 -f Modelfile
+
+2. PIPELINE STRUCTURE
+---------------------
+preprocess.py       -> Cleans datasets; shrinks file sizes by ~54%.
+ollama_client.py    -> Handles model inference; prints TTFT/TPS metrics.
+rag/retriever.py    -> Hybrid FAISS (dense) + BM25 (sparse) retriever.
+                       Includes Header-Aware Table Chunking.
+run_baseline_eval.py -> Evaluates batch program execution accuracy.
+query.py            -> Test-runs retrieval & generation on a single index.
+prepare_mlx_data.py -> Creates MLX training dataset with retriever-aligned contexts.
+
+
+3. COMMONLY USED COMMANDS
+-------------------------
+Install Dependencies:   .venv/bin/pip install -r requirements.txt
+Build Ollama Model:     ollama create finqa-llama3.2 -f Modelfile
+Preprocess Datasets:    .venv/bin/python preprocess.py
+Prepare MLX Dataset:    .venv/bin/python prepare_mlx_data.py
+Run Full Train Cycle:   ./train.sh
+Run Batch RAG Eval:     .venv/bin/python run_baseline_eval.py --mode retrieved --limit 3 --show-comparison
+          Gold Eval:    .venv/bin/python run_baseline_eval.py --mode gold --limit 3 --show-comparison
+          Test Eval:  .venv/bin/python run_baseline_eval.py --mode retrieved --dataset data/private_test.json --limit 3
+Run Single Query:       .venv/bin/python query.py --index 0
+
+
+
+
+4. DATASET INTEGRITY NOTES
+--------------------------
+- Train / Val / Test splits have 0% data leakage (no shared IDs).
+- Public test.json and private_test.json share 726 overlapping examples.
+
+5. MLX TO OLLAMA BRIDGE NOTES
+-----------------------------
+- MLX requires standard Hugging Face model formats (Safetensors) to train.
+- Ollama requires the GGUF model format to run local inference.
+- To use an MLX trained adapter in Ollama:
+  1. Train adapter using mlx_lm.lora.
+  2. Fuse the adapter: python -m mlx_lm.fuse --model <base> --adapter-path ./adapters --save-path ./fused
+  3. Convert fused model to GGUF using llama.cpp conversion scripts.
+  4. Write an Ollama Modelfile pointing to the new GGUF file.
+
+6. REPOSITORY HYGIENE
+---------------------
+- A .gitignore file is placed in the root directory.
+- It ensures local virtual environments (.venv/), compiled python caches (__pycache__/), system files (.DS_Store), and large model artifacts (adapters/, fused/, GGUF files) are kept out of Git.
+
+
+

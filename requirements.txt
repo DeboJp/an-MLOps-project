@@ -8,3 +8,4 @@ requests
 numpy
 pandas
 rank_bm25
+mlx-lm

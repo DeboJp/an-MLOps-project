@@ -32,7 +32,7 @@ class OllamaClient:
         token_count = 0
 
         # Send request and stream the response
-        response = requests.post(url, json=payload, stream=True)
+        response = requests.post(url, json=payload, stream=True, timeout=60)
         response.raise_for_status()
 
         for line in response.iter_lines():

@@ -85,25 +85,30 @@ def run_evaluation(dataset_path, limit=10, model_name="finqa-llama3.2", mode="go
     predictions = []
 
     for example in tqdm(eval_dataset):
-        if mode == "retrieved":
-            retrieved_docs = retriever.retrieve_context(example, example["qa"]["question"], k=5)
-            prompt = format_retrieved_prompt(example, retrieved_docs)
-        else:
-            prompt = format_gold_prompt(example)
+        try:
+            if mode == "retrieved":
+                retrieved_docs = retriever.retrieve_context(example, example["qa"]["question"], k=5)
+                prompt = format_retrieved_prompt(example, retrieved_docs)
+            else:
+                prompt = format_gold_prompt(example)
+                
+            res = client.generate(prompt)
+            raw_response = res["text"]
+            cleaned_response = clean_llm_response(raw_response)
             
-        res = client.generate(prompt)
-        raw_response = res["text"]
-        cleaned_response = clean_llm_response(raw_response)
-        
-        # Tokenize the prediction using the official tokenization logic
-        pred_tokens = program_tokenization(cleaned_response)
+            # Tokenize the prediction using the official tokenization logic
+            pred_tokens = program_tokenization(cleaned_response)
+        except Exception as e:
+            tqdm.write(f"\n[Warning] Error processing example {example['id']}: {e}")
+            pred_tokens = ["error", "EOF"]
+            cleaned_response = f"error: {e}"
 
         expected_program = example["qa"]["program"]
 
         if show_comparison:
             tqdm.write("\n" + "="*50)
             tqdm.write(f"Question: {example['qa']['question']}")
-            if mode == "retrieved":
+            if mode == "retrieved" and 'retrieved_docs' in locals():
                 tqdm.write("Retrieved Context:")
                 for i, doc in enumerate(retrieved_docs):
                     tqdm.write(f"  [{i}] {doc.page_content} ({doc.metadata})")

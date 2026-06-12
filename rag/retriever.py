@@ -15,10 +15,10 @@ class FinQARetriever:
             encode_kwargs={"normalize_embeddings": True}
         )
 
-    def retrieve_context(self, example, query, k=5):
+    def example_to_documents(self, example):
         """
-        Builds a transient hybrid FAISS + BM25 index for the single FinQA example,
-        and retrieves the top-k documents relevant to the query.
+        Converts the pre_text, post_text, and table of a FinQA example
+        into a list of formatted LangChain Document objects.
         """
         documents = []
         
@@ -54,9 +54,15 @@ class FinQARetriever:
                         page_content=page_content,
                         metadata={"source": "table", "index": i}
                     ))
-                
+        return documents
+
+    def build_ensemble_retriever(self, documents, k=5):
+        """
+        Builds and returns a LangChain EnsembleRetriever (FAISS + BM25) 
+        from a list of Documents.
+        """
         if not documents:
-            return []
+            return None
             
         # Build FAISS vector store
         db = FAISS.from_documents(documents, self.embeddings)
@@ -67,11 +73,21 @@ class FinQARetriever:
         sparse_retriever.k = k
         
         # Combine using EnsembleRetriever
-        ensemble_retriever = EnsembleRetriever(
+        return EnsembleRetriever(
             retrievers=[dense_retriever, sparse_retriever],
             weights=[0.5, 0.5]
         )
+
+    def retrieve_context(self, example, query, k=5):
+        """
+        Builds a transient hybrid retriever and returns the top-k deduplicated documents.
+        """
+        documents = self.example_to_documents(example)
+        ensemble_retriever = self.build_ensemble_retriever(documents, k=k)
         
+        if not ensemble_retriever:
+            return []
+            
         retrieved_docs = ensemble_retriever.invoke(query)
         
         # Deduplicate retrieved documents to maintain order and uniqueness
@@ -83,3 +99,4 @@ class FinQARetriever:
                 unique_docs.append(doc)
                 
         return unique_docs[:k]
+

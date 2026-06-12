@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+
+# Local MLX / Hugging Face weights and adapters
+adapters/
+fused/
+fused_model/
+*.gguf
+Modelfile.local
+
+# Run outputs and caching
+predictions.json
+.system_generated/
+.agents/
+
+# Remote downloads / repositories
+FinQA-main/
+finqa/
+
+# Local data cache (if not committing data)
+# data/
