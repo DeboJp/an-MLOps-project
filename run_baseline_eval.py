@@ -72,6 +72,69 @@ Question:
 """
     return prompt
 
+def format_gold_chunks_prompt(example):
+    """
+    Constructs the prompt using only the gold sentences and table rows
+    formatted in the exact Header-Aware Column chunking template.
+    """
+    pre_text = example.get("pre_text", [])
+    post_text = example.get("post_text", [])
+    table = example.get("table", [])
+    gold_inds = example["qa"].get("gold_inds", {})
+
+    gold_chunks = []
+
+    def clean_txt(t):
+        return t.strip()
+
+    # Pre-text sentences
+    for i, text in enumerate(pre_text):
+        content = clean_txt(text)
+        if not content:
+            continue
+        key = f"text_{i}"
+        if key in gold_inds:
+            gold_chunks.append(content)
+
+    # Post-text sentences
+    pre_len = len(pre_text)
+    for i, text in enumerate(post_text):
+        content = clean_txt(text)
+        if not content:
+            continue
+        key = f"text_{pre_len + i}"
+        if key in gold_inds:
+            gold_chunks.append(content)
+
+    # Table rows with Header-Aware chunking format
+    if len(table) > 0:
+        headers = table[0]
+        headers_str = " | ".join(headers)
+        start_idx = 1 if len(table) > 1 else 0
+        
+        # Row 0
+        key_0 = "table_0"
+        if key_0 in gold_inds:
+            content_0 = f"Columns: {headers_str} -> Row: {headers_str}"
+            gold_chunks.append(content_0)
+
+        # Rest of table
+        for i in range(1, len(table)):
+            key = f"table_{i}"
+            if key in gold_inds:
+                row_str = " | ".join(table[i])
+                content = f"Columns: {headers_str} -> Row: {row_str}"
+                gold_chunks.append(content)
+
+    context_str = "\n".join(gold_chunks)
+    prompt = f"""Context:
+{context_str}
+
+Question:
+{example["qa"]["question"]}
+"""
+    return prompt
+
 def run_evaluation(dataset_path, limit=10, model_name="finqa-llama3.2", mode="gold", show_comparison=False):
     print(f"Loading dataset from: {dataset_path}")
     with open(dataset_path, "r") as f:
@@ -89,6 +152,8 @@ def run_evaluation(dataset_path, limit=10, model_name="finqa-llama3.2", mode="go
             if mode == "retrieved":
                 retrieved_docs = retriever.retrieve_context(example, example["qa"]["question"], k=5)
                 prompt = format_retrieved_prompt(example, retrieved_docs)
+            elif mode == "gold_chunks":
+                prompt = format_gold_chunks_prompt(example)
             else:
                 prompt = format_gold_prompt(example)
                 
@@ -112,6 +177,9 @@ def run_evaluation(dataset_path, limit=10, model_name="finqa-llama3.2", mode="go
                 tqdm.write("Retrieved Context:")
                 for i, doc in enumerate(retrieved_docs):
                     tqdm.write(f"  [{i}] {doc.page_content} ({doc.metadata})")
+            elif mode == "gold_chunks":
+                tqdm.write("Gold Chunks Context:")
+                tqdm.write(prompt.replace("Context:\n", "").replace(f"\n\nQuestion:\n{example['qa']['question']}\n", ""))
             
             tqdm.write("Expected (Gold) Context:")
             gold_texts = list(example["qa"]["gold_inds"].values())
@@ -141,7 +209,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="data/test.json", help="Path to the dataset JSON file")
     parser.add_argument("--limit", type=int, default=3, help="Number of examples to evaluate")
     parser.add_argument("--model", type=str, default="finqa-llama3.2", help="Ollama model name")
-    parser.add_argument("--mode", type=str, choices=["gold", "retrieved"], default="gold", help="Evaluation mode")
+    parser.add_argument("--mode", type=str, choices=["gold", "retrieved", "gold_chunks"], default="gold", help="Evaluation mode")
     parser.add_argument("--show-comparison", action="store_true", help="Print comparison between LLM output and expected ground truth")
     args = parser.parse_args()
 

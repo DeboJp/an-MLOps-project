@@ -190,7 +190,7 @@ def main():
 
     # Process splits
     prepare_split("data/train.json", "mlx_data/train.jsonl", limit=args.train_limit)
-    prepare_split("data/val.json", "mlx_data/val.jsonl", limit=args.val_limit)
+    prepare_split("data/val.json", "mlx_data/valid.jsonl", limit=args.val_limit)
     prepare_split("data/test.json", "mlx_data/test.jsonl", limit=args.test_limit)
     
     print("\nDataset preparation complete! Files written to mlx_data/")
