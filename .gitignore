@@ -28,6 +28,7 @@ predictions.json
 # Remote downloads / repositories
 FinQA-main/
 finqa/
+FinQA-Data/
 
-# Local data cache (if not committing data)
-# data/
+# Local experimental scripts
+scratch/
