@@ -1,0 +1,71 @@
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. Data Preparation & Leakage Safeguards                                               │
+│ • Cryptographic Hashing: Computes SHA-256 on raw fields (pre_text, post_text, table)   │
+│   to programmatically guarantee 0% data leakage between train, val, and test splits.   │
+│ • Gold + Noisy Padding: Extracts ground-truth table rows/sentences and injects random  │
+│   distractors from the same page (up to k=5) to train model noise robustness.          │
+│ • Chat Template Synchronization: Bakes model-native control tokens (e.g.,              │
+│   <|start_header_id|>) directly into the training data to prevent formatting           │
+│   divergence and attention drift during inference.                                     │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 2. Hybrid RAG Retriever (Context Construction)                                         │
+│ • Header-Aware Table Chunking: Dynamically prepends column headers to every serialized │
+│   table row chunk. This preserves the 2D visual layout for the LLM, preventing it      │
+│   from losing the mapping between cell values and column metrics (e.g., years).        │
+│ • Dual Search Strategy (50/50 Blending): Combines a BM25 sparse lexical matcher to     │
+│   catch exact entity/date/currency strings, with a FAISS Dense index (all-MiniLM-L6-v2)│
+│   to catch semantic financial synonyms, weighted equally via an Ensemble Retriever.    │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 3. Unified Inference Client Router                                                     │
+│ • Deterministic Enforcer: Injects Greedy Decoding parameters (temperature=0.0 or       │
+│   do_sample=False) into all payload requests. This forces the LLM to pick the highest  │
+│   probability token, guaranteeing that mathematical outputs are strictly reproducible. │
+│ • Real-time Telemetry: Hook-captures streaming payload chunks to measure Time to First │
+│   Token (TTFT) and Tokens Per Second (TPS) dynamically without blocking generation.    │
+│ • Dynamic Routing: Intercepts benchmark queries and routes them to the correct serving │
+│   endpoint based on the target model evaluation identifier.                            │
+└─┬─────────────────────────────────────────┬──────────────────────────────────────────┬─┘
+  │                                         │                                          │
+  ▼                                         ▼                                          ▼
+┌────────────────────────┐ ┌───────────────────────────────────┐ ┌─────────────────────────────┐
+│ Endpoint: Local Base   │ │ Endpoint: Local Tuned (Apple Sil) │ │ Endpoint: Cloud Hosted      │
+│ • Standard Ollama API  │ │ • MLX-LM Completion Server        │ │ • AWS SageMaker (TGI 3.0.1) │
+│ • Serves baseline      │ │ • Serves fused Safetensors        │ │ • Serves tuned model via    │
+│   Llama-3.2-3B model   │ │   adapters natively to completely │ │   boto3 runtime client.     │
+│   for un-tuned metrics.│ │   bypass GGUF serialization bugs. │ │ • Pulls weights directly    │
+│                        │ │ • Executes in 4-bit precision.    │ │   from HuggingFace Hub,     │
+│                        │ │                                   │ │   bypassing S3 latency.     │
+└─┬──────────────────────┘ └────────────────┬──────────────────┘ └─────────────┬───────────────┘
+  │                                         │                                  │
+  └─────────────────────────────────────────┼──────────────────────────────────┘
+                                            ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│ 4. Diagnostic Evaluator (Accuracy & Robustness)                                          │
+│ • Regex Output Sanitization: Programmatically strips duplicate EOF string tags, rogue    │
+│   commas, and artifact symbols to prevent the strict DSL parser from crashing.           │
+│ • Symbolic Program Accuracy (SymPy): Converts generated equations into abstract syntax   │
+│   trees (ASTs) to compare mathematical equivalence (e.g., A+B equals B+A) rather than    │
+│   relying on brittle strict-string equality.                                             │
+│ • Execution Accuracy (Sandbox): Safely executes generated DSL operations (add, exp,      │
+│   divide, table_max) in an isolated Python environment, comparing numeric outputs.       │
+│ • 4 RGB Testbeds: Orchestrates secondary evaluation runs to test:                        │
+│   1. Noise Robustness (distraction degradation)   2. Negative Rejection (hallucinations) │
+│   3. Information Integration (multi-hop logic)    4. Counterfactual (memorization checks)│
+└───────────────────────────────────────────┬──────────────────────────────────────────────┘
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 5. Benchmark Output Reports                                                            │
+│ • JSON Data Aggregation: Compiles total counts, structural error rates, TTFT, TPS,     │
+│   and accuracy floats into raw `docs/benchmark_results.json` for ingestion.            │
+│ • Markdown Matrix Generation: Formats comparative models (Base vs Tuned vs Cloud)      │
+│   into a clean markdown matrix (`docs/benchmark_results.md`) for cost-efficiency ROI.  │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+
