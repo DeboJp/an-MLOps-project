@@ -1,7 +1,7 @@
 # FinQA MLOps Pipeline
 
 ## Overview
-I built this project to set up a simple MLOps workflow. I choose to use the Llama-3.2-3B-Instruct-4bit model and tried numerical reasoning over financial reports (FinQA dataset,which simulated typical financial metric retrieval with tables and texts). I performed simple intentional fine-tuning and built an instrumented platform to measure and compare the latency, throughput, and accuracy trade-offs between running models locally (via Ollama and MLX-LM on Apple Silicon) and in the cloud (using AWS SageMaker real-time endpoints).
+I built this project to set up a simple MLOps workflow. I chose to use the Llama-3.2-3B-Instruct-4bit model and tried numerical reasoning over financial reports (FinQA dataset, which involves typical financial metric retrieval with tables and texts). I performed simple intentional fine-tuning and built an instrumented platform to measure and compare the latency, throughput, and accuracy trade-offs between running models locally (via Ollama and MLX-LM on Apple Silicon) and in the cloud (using AWS SageMaker real-time endpoints).
 
 <p align="center">
   <img src="docs/SageMaker-Eval-Script.png" alt="SageMaker Eval Overview" width="800"/>
@@ -51,13 +51,13 @@ Here is the complete benchmark table showing results for both baseline and fine-
   <img src="docs/benchmark-results.png" alt="Benchmark Results" width="800"/>
 </p>
 
-*Caveat: Sagemaker here is running L3.2-3B-I-16bit instead of 4bit due to unsupported MLX architecture on AWS, and no access to meta official weights. Worse inference is expected due to larger model size on similar(but cloud) grade resource.*
+*Caveat: Sagemaker here is running L3.2-3B-I-16bit instead of 4bit due to unsupported MLX architecture on AWS, and no access to meta official weights. Worse inference is expected due to larger model size on similar (but cloud) grade resource.*
 
 ### Takeaways and Assumptions
-* **Fine-Tuning works:** The local Fine-Tuned model made a massive leap on Gold Chunks, bringing Execution Accuracy from 20% to 45%(on small test set). This shows the model was able to pick up on some DSL structure directly in its weights.
-* **Retriever is not the best but not the worst:** In Retrieved mode (where we ran the actual ensemble search), accuracy dropped off. The retriever likely pulled in distractors and numbers that the model got confused by or never pulled correct chunks. Our **retriever eval**-`check_recall.py` told us it was accurate only ~80% of the time and only 75% of the time grabbed all the correct chunks(gave full context) for the question.
-* **The SageMaker Chat Template :** The baseline 16bit model running on AWS SageMaker hit structure error rates of 65% to 78%. I assume this was due to the Hugging Face TGI serving container not applying the exact chat template formatting that Ollama automatically handles locally. It resulted in the model failing to output valid math commands. (still saw system msg but as a simple prompt instead.)
-* **SFT improves effective throughput (TPS) and trade-off with TTFT:** We notice about 8-12% improvement in TPS, this can be attributed to a combination of factors: lower entropy since model somewhat knows what pool of responses we want, lower internalizing the style and knowledge of task(smaller kv cache), and also avoiding verbose chatter and filler text, all of which can dramatically lowering overall response latency and raising the *effective* TPS (tokens processed and generated per second of user wait time). Faster TTFT on some tests may also support the above claims.
+* **Fine-Tuning works:** The local Fine-Tuned model made a massive leap on Gold Chunks, bringing Execution Accuracy from 20% to 45% (on small test set). This shows the model was able to pick up on some DSL structure directly in its weights.
+* **Retriever is not the best but not the worst:** In Retrieved mode (where we ran the actual ensemble search), accuracy dropped off. The retriever likely pulled in distractors and numbers that the model got confused by or never pulled correct chunks. Our **retriever eval**-`check_recall.py` told us it was accurate only ~80% of the time and only 75% of the time grabbed all the correct chunks (gave full context) for the question.
+* **The SageMaker Chat Template:** The baseline 16-bit model running on AWS SageMaker hit structure error rates of 65% to 78%. I assume this was due to the Hugging Face TGI serving container not applying the exact chat template formatting that Ollama automatically handles locally. It resulted in the model failing to output valid math commands. (still saw system msg but as a simple prompt instead.)
+* **SFT improves effective throughput (TPS), and trade-off with TTFT:** We noticed about 8-12% improvement in TPS. This can be attributed to a combination of factors: lower entropy since the model somewhat knows what pool of responses we want, internalizing the style and knowledge of the task (smaller KV cache), and avoiding verbose chatter and filler text, all of which dramatically lower overall response latency and raise the *effective* TPS (tokens processed and generated per second of user wait time). Faster TTFT on some tests may also support the above claims.
 
 ## Experience
 I decided to run the entire training and testing pipeline locally on an Apple M1 Pro laptop with 16GB RAM. This meant I was highly constrained by VRAM, which forced me to make some interesting optimization choices.
@@ -68,9 +68,9 @@ I also ran into a major GGUF export bug: after training the model using the MLX 
 
 Additionally, I realized that simple string matching for evaluation is useless for math (e.g., comparing `A + B` to `B + A` fails even though they are identical). I instead integrated SymPy to parse the Abstract Syntax Trees (ASTs) of the generated formulas so they are evaluated mathematically.
 
-I learned using Hugging Face(models specific) chat templates with control tokens (like `<|start_header_id|>` and `<|eot_id|>`), and excluding unused tokens(tool calling func) may've helped in avoiding some attention weights drift, but could've also caused it in base models. I also learned I had to restructure the preprocessing pipeline to save datasets as a structured JSON array of messages (system, user, assistant), allowing the MLX training framework to apply the native model template automatically.
+I learned that using Hugging Face (model-specific) chat templates with control tokens (like `<|start_header_id|>` and `<|eot_id|>`), and excluding unused tokens (tool-calling functions) may've helped in avoiding some attention weights drift, but could've also caused it in base models. I also learned I had to restructure the preprocessing pipeline to save datasets as a structured JSON array of messages (system, user, assistant), allowing the MLX training framework to apply the native model template automatically.
 
-Another major challenge was handling table contexts. Financial tables are large and complex. If you chunk a table row-by-row, the retriever might fetch a row like `Year 2021: 15,200` but the model has no idea what that number represents because it lost the column header (like "Revenue in Millions").So I wrote custom code to implement Header-Aware Chunking, which prepended the column headers to every single table row chunk. That way, when a row is retrieved in isolation, it still carries its headers, allowing the generator to hopefully align the numbers correctly.
+Another major challenge was handling table contexts. Financial tables are large and complex. If you chunk a table row-by-row, the retriever might fetch a row like `Year 2021: 15,200` but the model has no idea what that number represents because it lost the column header (like "Revenue in Millions"). So I wrote custom code to implement Header-Aware Chunking, which prepended the column headers to every single table row chunk. That way, when a row is retrieved in isolation, it still carries its headers, allowing the generator to hopefully align the numbers correctly.
 
 The dataset did not have the best setup for RAG SFT. So I tried using the retriever to create the training contexts dynamically (Retriever-Aligned Training), thinking it would teach the model to deal with realistic retrieval errors. That was a mistake. If the retriever missed the gold rows, the correct numbers were completely missing from the prompt context, forcing the model to learn from incomplete context or hallucinate calculations. It might've been better to help teach it to say no relevant context found. I learned that guaranteeing data completeness (using Gold + Noisy Padding to guarantee correct numbers are present alongside distractors) is way more important for training than trying to simulate live retrieval noise.
 
@@ -78,15 +78,15 @@ Finally, cloud deployment on AWS SageMaker was its own mini-project. I originall
 
 ## Serving & Architecture Trade-offs
 
-Here are just some of the design trade-offs(summarized) I faced across serving, retrieval, data prep, and evaluation in this project. Feel free to look at repo to understand others:
+Here are just some of the design trade-offs (summarized) I faced across serving, retrieval, data prep, and evaluation in this project. Feel free to look at repo to understand others:
 
 ### Serving: Local (Apple Silicon) vs. Cloud (AWS SageMaker)
 * **Local (Ollama / MLX-LM)**
   * *Upside:* Zero hosting cost, absolute data privacy, and fast pre-fill (500+ TPS) due to prefix KV-cache reuse.
-  * *Downside:* Restricted by laptop VRAM, and forced to run split servers (ports 11434 and 11435), and mlx not widely supported yet.
+  * *Downside:* Restricted by laptop VRAM, and forced to run split servers (ports 11434 and 11435), and MLX not widely supported yet.
 * **Cloud (AWS SageMaker)**
   * *Upside:* Horizontally scalable and able to support heavier, unquantized FP16 models.
-  * *Downside:* Expensive to keep active, long cold-starts to pull weights, prone to container template mismatch, and cannot load MLX-quantized weights even in Safetensors format (must be unquantized FP16/BF16 or CUDA-quantized like AWQ/GPTQ) i think. no privacy.
+  * *Downside:* Expensive to keep active, long cold-starts to pull weights, prone to container template mismatch, and cannot load MLX-quantized weights even in Safetensors format (must be unquantized FP16/BF16 or CUDA-quantized like AWQ/GPTQ) I think. No data privacy.
 
 ### Context Preparation: RAT vs. Gold + Noisy Padding
 * **Retriever-Aligned Training (RAT)**
